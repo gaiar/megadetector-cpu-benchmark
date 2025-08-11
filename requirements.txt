@@ -1,0 +1,33 @@
+# MegaDetector CPU Benchmark Requirements
+# Optimized for CPU-only inference
+
+# Core dependencies
+numpy>=1.22.0,<2.0
+Pillow>=9.5.0
+tqdm>=4.64.0
+humanfriendly>=10.0
+jsonpickle>=3.0.2
+
+# Computer vision
+opencv-python-headless>=4.8.0
+
+# Data processing
+pandas>=2.1.1
+matplotlib>=3.8.0
+
+# System monitoring
+psutil>=5.9.6
+py-cpuinfo>=9.0.0
+
+# PyTorch CPU-only (specified separately in Dockerfile for CPU optimization)
+# torch==2.1.0
+# torchvision==0.16.0
+
+# YOLO dependencies (for MegaDetector)
+ultralytics-yolov5==0.1.1
+PyYAML>=5.3.1
+scipy>=1.10.0
+seaborn>=0.11.0
+
+# MegaDetector package
+git+https://github.com/agentmorris/MegaDetector.git

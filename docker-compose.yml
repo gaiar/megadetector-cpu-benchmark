@@ -1,0 +1,105 @@
+version: '3.8'
+
+services:
+  megadetector-benchmark:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: megadetector-cpu-benchmark:latest
+    container_name: md-benchmark
+    
+    # Resource limits optimized for Intel Xeon with 64GB RAM
+    deploy:
+      resources:
+        limits:
+          cpus: '8'          # All 8 threads
+          memory: 32G        # Half of available RAM for safety
+        reservations:
+          cpus: '4'          # Minimum 4 threads
+          memory: 8G         # Minimum 8GB RAM
+    
+    # Environment variables for CPU optimization
+    environment:
+      - MKL_NUM_THREADS=8
+      - OMP_NUM_THREADS=8
+      - KMP_AFFINITY=granularity=fine,compact,1,0
+      - KMP_BLOCKTIME=0
+      - MKL_DYNAMIC=FALSE
+      - OMP_PROC_BIND=TRUE
+      - OMP_PLACES=cores
+      - TORCH_NUM_THREADS=8
+      - TORCH_NUM_INTEROP_THREADS=2
+      - CUDA_VISIBLE_DEVICES=
+      - FORCE_CPU=1
+    
+    # Volume mounts
+    volumes:
+      # Mount test images
+      - ./data:/workspace/data:ro
+      
+      # Mount results directory
+      - ./results:/workspace/results:rw
+      
+      # Mount models (optional - to use custom models)
+      - ./models:/workspace/models:ro
+      
+      # Mount benchmark scripts for development
+      - ./benchmark.py:/workspace/benchmark.py:ro
+      - ./utils.py:/workspace/utils.py:ro
+    
+    # Run benchmark on start
+    command: ["--mode", "full", "--images", "/workspace/data/test_images"]
+    
+    # Network mode for better performance
+    network_mode: host
+    
+    # Security options
+    security_opt:
+      - no-new-privileges:true
+    
+    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+  
+  # Optional: System monitoring with Prometheus node exporter
+  node-exporter:
+    image: prom/node-exporter:latest
+    container_name: node-exporter
+    restart: unless-stopped
+    ports:
+      - "9100:9100"
+    command:
+      - '--path.rootfs=/host'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+    volumes:
+      - /:/host:ro
+    profiles:
+      - monitoring
+
+# Quick benchmark service for testing
+  benchmark-quick:
+    extends: megadetector-benchmark
+    command: ["--mode", "quick", "--images", "/workspace/data/test_images"]
+    profiles:
+      - quick
+
+# Threading optimization test
+  benchmark-threading:
+    extends: megadetector-benchmark
+    command: ["--mode", "threading", "--images", "/workspace/data/test_images"]
+    profiles:
+      - threading
+
+# Compare models
+  benchmark-compare:
+    extends: megadetector-benchmark
+    command: ["--model", "/workspace/models/md_v5b.0.0.pt", "--mode", "full"]
+    profiles:
+      - compare
+
+networks:
+  default:
+    driver: bridge

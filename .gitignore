@@ -1,0 +1,87 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.hypothesis/
+
+# Virtual Environment
+venv/
+ENV/
+env/
+.venv/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+*.ipynb
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Docker
+*.log
+.dockerignore
+
+# Project specific
+data/
+!data/.gitkeep
+models/
+!models/.gitkeep
+results/
+!results/.gitkeep
+*.pt
+*.pth
+*.onnx
+*.h5
+
+# Test images (large files)
+data/test_images/
+!data/test_images/.gitkeep
+
+# Benchmark outputs
+benchmark_results_*.json
+benchmark_plots.*
+*.csv
+
+# Temporary files
+*.tmp
+*.bak
+.cache/
+
+# Environment files
+.env
+.env.local
+
+# OS files
+Thumbs.db
+Desktop.ini
+
+# Downloaded models
+md_v5*.pt
+yolo*.pt
