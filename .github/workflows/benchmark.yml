@@ -1,0 +1,103 @@
+name: Performance Benchmark
+
+on:
+  workflow_dispatch:
+    inputs:
+      batch_sizes:
+        description: 'Batch sizes to test (space-separated)'
+        required: false
+        default: '1 4 8 16'
+      num_images:
+        description: 'Number of test images'
+        required: false
+        default: '50'
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+    
+    - name: System Info
+      run: |
+        echo "=== CPU Info ==="
+        lscpu
+        echo ""
+        echo "=== Memory Info ==="
+        free -h
+        echo ""
+        echo "=== Docker Info ==="
+        docker --version
+        docker-compose --version
+    
+    - name: Build Docker image
+      run: docker-compose build
+    
+    - name: Download test images
+      run: |
+        chmod +x download_test_images.sh
+        ./download_test_images.sh
+    
+    - name: Run benchmark
+      run: |
+        docker-compose run megadetector-benchmark \
+          --batch-sizes ${{ github.event.inputs.batch_sizes }} \
+          --num-images ${{ github.event.inputs.num_images }}
+    
+    - name: Generate report
+      run: |
+        python -c "
+        from utils import plot_benchmark_results
+        import glob
+        import os
+        
+        results = glob.glob('results/benchmark_results_*.json')
+        if results:
+            latest = max(results, key=os.path.getctime)
+            plot_benchmark_results(latest)
+        "
+    
+    - name: Upload results
+      uses: actions/upload-artifact@v3
+      with:
+        name: benchmark-results-${{ github.run_number }}
+        path: |
+          results/*.json
+          results/*.png
+          results/*.pdf
+    
+    - name: Comment PR with results
+      if: github.event_name == 'pull_request'
+      uses: actions/github-script@v6
+      with:
+        script: |
+          const fs = require('fs');
+          const glob = require('glob');
+          
+          const files = glob.sync('results/benchmark_results_*.json');
+          if (files.length > 0) {
+            const data = JSON.parse(fs.readFileSync(files[0], 'utf8'));
+            const best = data.reduce((prev, curr) => 
+              prev.fps > curr.fps ? prev : curr
+            );
+            
+            const comment = `## 📊 Benchmark Results
+            
+            **Best Configuration:**
+            - Batch Size: ${best.batch_size}
+            - FPS: ${best.fps.toFixed(2)}
+            - Latency P95: ${best.latency_p95.toFixed(1)}ms
+            - CPU Usage: ${best.cpu_usage_mean.toFixed(1)}%
+            - Memory: ${best.memory_usage_peak.toFixed(1)}GB
+            
+            [Full results artifact](https://github.com/${{github.repository}}/actions/runs/${{github.run_id}})`;
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });
+          }

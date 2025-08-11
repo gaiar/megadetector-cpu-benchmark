@@ -1,0 +1,97 @@
+name: Docker Build & Test
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  schedule:
+    # Run weekly to catch dependency issues
+    - cron: '0 0 * * 0'
+
+env:
+  DOCKER_BUILDKIT: 1
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+    
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v2
+    
+    - name: Cache Docker layers
+      uses: actions/cache@v3
+      with:
+        path: /tmp/.buildx-cache
+        key: ${{ runner.os }}-buildx-${{ github.sha }}
+        restore-keys: |
+          ${{ runner.os }}-buildx-
+    
+    - name: Build Docker image
+      run: |
+        docker-compose build
+    
+    - name: Create test data
+      run: |
+        mkdir -p data/test_images
+        python -c "
+        import numpy as np
+        import cv2
+        for i in range(5):
+            img = np.random.randint(0, 255, (640, 480, 3), dtype=np.uint8)
+            cv2.imwrite(f'data/test_images/test_{i}.jpg', img)
+        "
+    
+    - name: Run quick benchmark test
+      run: |
+        docker-compose --profile quick up --exit-code-from benchmark-quick
+    
+    - name: Check results
+      run: |
+        if [ -f "results/benchmark_results_*.json" ]; then
+          echo "✅ Benchmark completed successfully"
+          cat results/benchmark_results_*.json | head -50
+        else
+          echo "❌ No results found"
+          exit 1
+        fi
+    
+    - name: Upload results
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: benchmark-results
+        path: results/
+
+  test-python:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ['3.9', '3.10', '3.11']
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+        pip install -r requirements.txt
+    
+    - name: Run Python tests
+      run: |
+        python -c "import torch; print(f'PyTorch: {torch.__version__}')"
+        python -c "from utils import get_system_info; import json; print(json.dumps(get_system_info(), indent=2))"
+    
+    - name: Test benchmark script
+      run: |
+        python benchmark.py --help
