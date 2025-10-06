@@ -22,15 +22,19 @@ from concurrent.futures import ThreadPoolExecutor
 import warnings
 warnings.filterwarnings('ignore')
 
-# Import MegaDetector
-try:
-    from megadetector.detection import run_detector
-    from megadetector.detection.pytorch_detector import PTDetector
-except ImportError:
-    print("MegaDetector not found. Installing...")
-    os.system("pip install git+https://github.com/agentmorris/MegaDetector.git")
-    from megadetector.detection import run_detector
-    from megadetector.detection.pytorch_detector import PTDetector
+
+def _import_megadetector():
+    """Lazily import MegaDetector to avoid unnecessary dependencies for --help."""
+
+    try:
+        from megadetector.detection.pytorch_detector import PTDetector  # type: ignore
+    except ImportError as exc:
+        raise ImportError(
+            "MegaDetector is required to run benchmarks. "
+            "Install it with 'pip install git+https://github.com/agentmorris/MegaDetector.git'"
+        ) from exc
+
+    return PTDetector
 
 @dataclass
 class BenchmarkResult:
@@ -95,6 +99,7 @@ class MegaDetectorBenchmark:
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(exist_ok=True)
         self.detector = None
+        self._detector_cls = None
         self.results = []
         
         # Configure CPU optimization
@@ -126,8 +131,11 @@ class MegaDetectorBenchmark:
         """Load MegaDetector model"""
         print(f"\n📦 Loading model: {self.model_path}")
         start = time.time()
-        
-        self.detector = PTDetector(self.model_path)
+
+        if self._detector_cls is None:
+            self._detector_cls = _import_megadetector()
+
+        self.detector = self._detector_cls(self.model_path)
         
         load_time = time.time() - start
         print(f"✓ Model loaded in {load_time:.2f}s")
