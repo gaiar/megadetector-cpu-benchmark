@@ -9,28 +9,57 @@ import sys
 import json
 import time
 import argparse
-import statistics
-import psutil
-import cpuinfo
-import torch
-import numpy as np
+try:  # pragma: no cover - exercised via CLI smoke tests
+    import psutil  # type: ignore
+except ImportError:  # pragma: no cover - exercised when deps absent
+    psutil = None  # type: ignore
+
+try:  # pragma: no cover - exercised via CLI smoke tests
+    import cpuinfo  # type: ignore
+except ImportError:  # pragma: no cover - exercised when deps absent
+    cpuinfo = None  # type: ignore
+
+try:  # pragma: no cover - exercised via CLI smoke tests
+    import torch  # type: ignore
+except ImportError:  # pragma: no cover - exercised when deps absent
+    torch = None  # type: ignore
+
+try:  # pragma: no cover - exercised via CLI smoke tests
+    import numpy as np  # type: ignore
+except ImportError:  # pragma: no cover - exercised when deps absent
+    np = None  # type: ignore
 from pathlib import Path
 from datetime import datetime
-from typing import List, Dict, Tuple, Optional
+from typing import List, Optional
 from dataclasses import dataclass, asdict
-from concurrent.futures import ThreadPoolExecutor
 import warnings
 warnings.filterwarnings('ignore')
 
-# Import MegaDetector
-try:
-    from megadetector.detection import run_detector
-    from megadetector.detection.pytorch_detector import PTDetector
-except ImportError:
-    print("MegaDetector not found. Installing...")
-    os.system("pip install git+https://github.com/agentmorris/MegaDetector.git")
-    from megadetector.detection import run_detector
-    from megadetector.detection.pytorch_detector import PTDetector
+
+def _require_dependency(module, package_name: str, install_hint: Optional[str] = None):
+    """Ensure an optional dependency is available before use."""
+
+    if module is None:
+        hint = install_hint or f"pip install {package_name}"
+        raise ImportError(
+            f"{package_name} is required to run benchmarks. Install it with '{hint}'."
+        )
+
+    return module
+
+
+def _import_megadetector():
+    """Lazily import MegaDetector to avoid unnecessary dependencies for --help."""
+
+    try:
+        from megadetector.detection.pytorch_detector import PTDetector  # type: ignore
+    except ImportError as exc:
+        raise ImportError(
+            "MegaDetector is required to run benchmarks. "
+            "Install it with 'pip install git+https://github.com/agentmorris/MegaDetector.git'"
+        ) from exc
+
+    return PTDetector
 
 @dataclass
 class BenchmarkResult:
@@ -64,27 +93,33 @@ class CPUMonitor:
         self.monitoring = True
         self.cpu_percentages = []
         self.memory_usage = []
-        
+
+        psutil_module = _require_dependency(psutil, "psutil")
+
         def monitor():
             while self.monitoring:
-                self.cpu_percentages.append(psutil.cpu_percent(interval=0.1))
-                self.memory_usage.append(psutil.virtual_memory().used / (1024**3))  # GB
+                self.cpu_percentages.append(psutil_module.cpu_percent(interval=0.1))
+                self.memory_usage.append(
+                    psutil_module.virtual_memory().used / (1024**3)
+                )  # GB
                 time.sleep(0.1)
-        
+
         from threading import Thread
         self.thread = Thread(target=monitor)
         self.thread.start()
-    
+
     def stop(self):
         """Stop monitoring and return statistics"""
         self.monitoring = False
         self.thread.join()
-        
+
+        numpy_module = _require_dependency(np, "numpy")
+
         return {
-            'cpu_mean': np.mean(self.cpu_percentages) if self.cpu_percentages else 0,
-            'cpu_max': np.max(self.cpu_percentages) if self.cpu_percentages else 0,
-            'memory_mean': np.mean(self.memory_usage) if self.memory_usage else 0,
-            'memory_peak': np.max(self.memory_usage) if self.memory_usage else 0
+            'cpu_mean': numpy_module.mean(self.cpu_percentages) if self.cpu_percentages else 0,
+            'cpu_max': numpy_module.max(self.cpu_percentages) if self.cpu_percentages else 0,
+            'memory_mean': numpy_module.mean(self.memory_usage) if self.memory_usage else 0,
+            'memory_peak': numpy_module.max(self.memory_usage) if self.memory_usage else 0
         }
 
 class MegaDetectorBenchmark:
@@ -95,6 +130,7 @@ class MegaDetectorBenchmark:
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(exist_ok=True)
         self.detector = None
+        self._detector_cls = None
         self.results = []
         
         # Configure CPU optimization
@@ -103,38 +139,47 @@ class MegaDetectorBenchmark:
     def _configure_cpu_optimization(self):
         """Configure PyTorch for optimal CPU performance"""
         # Set thread counts
+        torch_module = _require_dependency(torch, "torch")
+        cpuinfo_module = _require_dependency(cpuinfo, "cpuinfo", "pip install py-cpuinfo")
+        psutil_module = _require_dependency(psutil, "psutil")
+
         num_threads = int(os.environ.get('OMP_NUM_THREADS', 8))
-        torch.set_num_threads(num_threads)
-        torch.set_num_interop_threads(2)
-        
+        torch_module.set_num_threads(num_threads)
+        torch_module.set_num_interop_threads(2)
+
         # Enable MKL optimizations if available
-        if torch.backends.mkl.is_available():
+        if torch_module.backends.mkl.is_available():
             print(f"✓ Intel MKL enabled")
-            torch.backends.mkl.enabled = True
-        
+            torch_module.backends.mkl.enabled = True
+
         # Disable gradient computation for inference
-        torch.set_grad_enabled(False)
-        
+        torch_module.set_grad_enabled(False)
+
         # Set flush denormal for FP32 speedup
-        torch.set_flush_denormal(True)
-        
+        torch_module.set_flush_denormal(True)
+
         print(f"✓ PyTorch configured: {num_threads} threads")
-        print(f"✓ CPU: {cpuinfo.get_cpu_info()['brand_raw']}")
-        print(f"✓ RAM: {psutil.virtual_memory().total / (1024**3):.1f} GB")
+        print(f"✓ CPU: {cpuinfo_module.get_cpu_info()['brand_raw']}")
+        print(f"✓ RAM: {psutil_module.virtual_memory().total / (1024**3):.1f} GB")
         
     def load_model(self):
         """Load MegaDetector model"""
         print(f"\n📦 Loading model: {self.model_path}")
         start = time.time()
-        
-        self.detector = PTDetector(self.model_path)
-        
+
+        if self._detector_cls is None:
+            self._detector_cls = _import_megadetector()
+
+        numpy_module = _require_dependency(np, "numpy")
+
+        self.detector = self._detector_cls(self.model_path)
+
         load_time = time.time() - start
         print(f"✓ Model loaded in {load_time:.2f}s")
-        
+
         # Warm up with dummy inference
         print("🔥 Warming up model...")
-        dummy_image = np.random.randint(0, 255, (640, 640, 3), dtype=np.uint8)
+        dummy_image = numpy_module.random.randint(0, 255, (640, 640, 3), dtype=numpy_module.uint8)
         for _ in range(3):
             self.detector.generate_detections_one_image(dummy_image)
         print("✓ Model ready")
@@ -161,7 +206,10 @@ class MegaDetectorBenchmark:
     def benchmark_batch(self, image_files: List[str], batch_size: int = 1) -> BenchmarkResult:
         """Run benchmark with specified batch size"""
         print(f"\n🏃 Running benchmark: batch_size={batch_size}, images={len(image_files)}")
-        
+
+        numpy_module = _require_dependency(np, "numpy")
+        torch_module = _require_dependency(torch, "torch")
+
         # Monitor system resources
         monitor = CPUMonitor()
         monitor.start()
@@ -209,15 +257,15 @@ class MegaDetectorBenchmark:
             num_images=len(image_files),
             total_time=total_time,
             fps=fps,
-            latency_mean=np.mean(latencies_ms),
-            latency_p50=np.percentile(latencies_ms, 50),
-            latency_p95=np.percentile(latencies_ms, 95),
-            latency_p99=np.percentile(latencies_ms, 99),
-            latency_max=np.max(latencies_ms),
+            latency_mean=numpy_module.mean(latencies_ms),
+            latency_p50=numpy_module.percentile(latencies_ms, 50),
+            latency_p95=numpy_module.percentile(latencies_ms, 95),
+            latency_p99=numpy_module.percentile(latencies_ms, 99),
+            latency_max=numpy_module.max(latencies_ms),
             cpu_usage_mean=monitor_stats['cpu_mean'],
             memory_usage_peak=monitor_stats['memory_peak'],
             memory_usage_mean=monitor_stats['memory_mean'],
-            num_threads=torch.get_num_threads(),
+            num_threads=torch_module.get_num_threads(),
             model_version=os.path.basename(self.model_path),
             timestamp=datetime.now().isoformat()
         )
@@ -276,22 +324,23 @@ class MegaDetectorBenchmark:
             return
         
         self.load_model()
-        
+
         print("\n" + "="*60)
         print("🧵 THREADING BENCHMARK")
         print("="*60)
-        
-        original_threads = torch.get_num_threads()
-        
+
+        torch_module = _require_dependency(torch, "torch")
+        original_threads = torch_module.get_num_threads()
+
         for num_threads in thread_counts:
             print(f"\n Testing with {num_threads} threads...")
-            torch.set_num_threads(num_threads)
+            torch_module.set_num_threads(num_threads)
             os.environ['OMP_NUM_THREADS'] = str(num_threads)
-            
+
             result = self.benchmark_batch(image_files, batch_size=4)
-            
+
         # Restore original settings
-        torch.set_num_threads(original_threads)
+        torch_module.set_num_threads(original_threads)
         
         self.save_results()
     
