@@ -47,7 +47,7 @@ echo "----------------------------------------"
 cat > generate_test_images.py << 'EOF'
 import sys
 sys.path.append('.')
-from utils import generate_synthetic_images
+from bench_utils import generate_synthetic_images
 
 # Generate images of different sizes for comprehensive testing
 sizes = [

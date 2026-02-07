@@ -36,16 +36,13 @@ services:
     volumes:
       # Mount test images
       - ./data:/workspace/data:ro
-      
+
       # Mount results directory
       - ./results:/workspace/results:rw
-      
-      # Mount models (optional - to use custom models)
-      - ./models:/workspace/models:ro
-      
+
       # Mount benchmark scripts for development
       - ./benchmark.py:/workspace/benchmark.py:ro
-      - ./utils.py:/workspace/utils.py:ro
+      - ./bench_utils.py:/workspace/bench_utils.py:ro
     
     # Run benchmark on start
     command: ["--mode", "full", "--images", "/workspace/data/test_images"]
@@ -99,6 +96,18 @@ services:
     command: ["--model", "/workspace/models/md_v5b.0.0.pt", "--mode", "full"]
     profiles:
       - compare
+
+# Use custom models from local ./models/ directory
+  benchmark-custom-model:
+    extends: megadetector-benchmark
+    volumes:
+      - ./data:/workspace/data:ro
+      - ./results:/workspace/results:rw
+      - ./models:/workspace/models:ro
+      - ./benchmark.py:/workspace/benchmark.py:ro
+      - ./bench_utils.py:/workspace/bench_utils.py:ro
+    profiles:
+      - custom-model
 
 networks:
   default:

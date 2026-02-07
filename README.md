@@ -150,7 +150,7 @@ megadetector-cpu-benchmark/
 ├── 🐳 Dockerfile              # CPU-optimized container
 ├── 🎼 docker-compose.yml      # Orchestration config
 ├── 🐍 benchmark.py            # Main benchmark script
-├── 🔧 utils.py                # Helper utilities
+├── 🔧 bench_utils.py          # Helper utilities
 ├── 📦 requirements.txt        # Python dependencies
 ├── 📥 download_test_images.sh # Test data fetcher
 ├── 📋 BENCHMARK_PLAN.md       # Detailed methodology
