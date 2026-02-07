@@ -90,7 +90,7 @@ jobs:
     - name: Run Python tests
       run: |
         python -c "import torch; print(f'PyTorch: {torch.__version__}')"
-        python -c "from utils import get_system_info; import json; print(json.dumps(get_system_info(), indent=2))"
+        python -c "from bench_utils import get_system_info; import json; print(json.dumps(get_system_info(), indent=2))"
     
     - name: Test benchmark script
       run: |

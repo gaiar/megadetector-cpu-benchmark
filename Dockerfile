@@ -94,7 +94,7 @@ RUN wget -q https://github.com/agentmorris/MegaDetector/releases/download/v5.0/m
 
 # Copy benchmark scripts
 COPY benchmark.py /workspace/
-COPY utils.py /workspace/
+COPY bench_utils.py /workspace/
 COPY requirements.txt /workspace/
 
 # Install MegaDetector package
